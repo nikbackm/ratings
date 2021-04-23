@@ -613,15 +613,6 @@ class Ratings {
 	}
 
 #define Q(str) "\"" str "\""
-#define CAST(to, what) "CAST(" what " AS " to ")"
-#define IFNULL(e1, e2) "ifnull(" e1 "," e2 ")"
-#define SUBSTR(e, start, len) "substr(" e "," #start "," #len ")"
-#define STRFTIME(fmt, e) "strftime('" fmt "'," e ")"
-#define ROUND_TO_INT(strExpr) CAST("INTEGER", "round(" strExpr ",0)")
-#define DATE_FULL(col) "iif(length(" col ") = 10, " col ", " SUBSTR(col "||'-01-01'", 1, 10) ")"
-#define DAYS(col) STRFTIME("%J", col) /* No cast included, must check for NULL first sometimes */
-#define DR Q("Date Read")
-#define APPEND_OPT_COL(mand, opt) "iif(" opt " IS NULL, " mand ", " mand "||' ['||" opt "||']')"
 
 public:
 	Ratings(int argc, char** argv)
@@ -631,9 +622,9 @@ public:
 	
 		ciText("co", "Const", 10, "Key");
 		ciNum("ra", Q("Your Rating"), 5, "Rating");
-		ciTextL("ti", "Title", 30, CNoCase, "Title");
+		ciTextL("ti", "Title", 50, CNoCase, "Title");
 		ciText("dr", Q("Date Rated"), 10, "Date");
-		ciText("url", "URL", 30, "URL");
+		ciText("url", "URL", 38, "URL");
 		ciText("ty", Q("Title Type"), 20, "Type");
 		ciNum("ri", Q("IMDB Rating"), 9, "IMDB Rat.");
 		ciNum("len", Q("Runtime (mins)"), 6, "Length");
@@ -1684,11 +1675,11 @@ public:
 		runListData("ti.dr.ra.ye.url", "dr.ti");
 	}
 
-	void listRereads()
+	void listRerated()
 	{
-		auto from = "(SELECT BookID, Count(BookID) As ReadCount FROM DatesRead GROUP BY BookID HAVING Count(BookID) > 1)";
-		OutputQuery query(*this, "brc.bt.bi.dr.ng", from, "dr.bi");
-		query.add("JOIN Books USING(BookID)");
+		auto from = "(SELECT Const, Count(Const) As Count FROM ratings GROUP BY Const HAVING Count(Const) > 1)";
+		OutputQuery query(*this, "ti.dr.ra.ye.url", from, "ti.dr");
+		query.add("JOIN Ratings USING(Const)");
 		runStandardOutputQuery(query);
 	}
 
@@ -1732,6 +1723,7 @@ public:
 		switch (auto const& act = m_action; a(act.c_str())) {
 		case a("h"): case a("h0"): case a("h1"): case a("h2"): showHelp(act == "h" ? 2 : act[1] - '0'); break;
 		case a("l"):  listRatings(arg(0)); break;
+		case a("rr"): listRerated(); break;
 		default:
 			throw std::invalid_argument("Invalid action: " + act);
 		}
