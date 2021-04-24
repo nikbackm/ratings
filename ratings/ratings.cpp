@@ -83,14 +83,15 @@ DisplayMode values:
     tabs        Tab-separated values
 
 Column short name values:
-    ti               - Movie title
+    ti               - Title
+    ye               - Year
+    tiye             - Title (Year)
     ra               - Your rating
     dr               - Date rated
     url              - IMDB url
     ty               - Title type
     ri               - IMDB rating
     len              - Runtime (mins)
-    ye               - Year
     ge               - Genres
     nv               - Num votes
     rd               - Release date
@@ -617,22 +618,23 @@ class Ratings {
 public:
 	Ratings(int argc, char** argv)
 	{
-		const char* const CDefault = nullptr;
-		const char* const CNoCase = "NOCASE";
+		auto const CNoCase = "NOCASE";
 	
 		ciText("co", "Const", 10, "Key");
 		ciNum("ra", Q("Your Rating"), 5, "Rating");
-		ciTextL("ti", "Title", 50, CNoCase, "Title");
+		ciTextL("ti", "Title", 60, CNoCase, "Title");
 		ciText("dr", Q("Date Rated"), 10, "Date");
 		ciText("url", "URL", 38, "URL");
 		ciText("ty", Q("Title Type"), 20, "Type");
-		ciNum("ri", Q("IMDB Rating"), 9, "IMDB Rat.");
+		ciNum("ri", Q("IMDB Rating"), 9, Q("IMDB Rat."));
 		ciNum("len", Q("Runtime (mins)"), 6, "Length");
 		ciNum("ye", "Year", 4, "Year");
 		ciTextL("ge", "Genres", 50, CNoCase, "Genres");
 		ciNum("nv", Q("Num Votes"), 9, "Votes");
 		ciText("rd", Q("Release Date"), 10, "Released");
 		ciTextL("di", "Directors", 50, CNoCase, "Directors");
+
+		ciTextL("tiye", "Title || ' (' || Year || ')'", 66, CNoCase, Q("Title (Year)"));
 
 		if (m_output.stdOutIsConsole()) {
 			CONSOLE_SCREEN_BUFFER_INFO csbi{}; GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi);
@@ -1672,22 +1674,22 @@ public:
 	void listRatings(std::string const& title)
 	{
 		addActionWhereCondition("ti", title);
-		runListData("ti.dr.ra.ye.url", "dr.ti");
+		runListData("ti.dr.ra.ty.ye.url", "dr.ti");
 	}
 
 	void listRerated()
 	{
 		auto from = "(SELECT Const, Count(Const) As Count FROM ratings GROUP BY Const HAVING Count(Const) > 1)";
-		OutputQuery query(*this, "ti.dr.ra.ye.url", from, "ti.dr");
+		OutputQuery query(*this, "ti.dr.ra.ty.ye.url", from, "ti.dr");
 		query.add("JOIN Ratings USING(Const)");
 		runStandardOutputQuery(query);
 	}
 
 	void listSametitle()
 	{
-		auto from = "(SELECT Title, Count(Title) As TitleCount FROM Books GROUP BY Title HAVING Count(Title) > 1)";
-		OutputQuery query(*this, "bi.bt.ng.btc", from, "bt.bi");
-		query.add("JOIN Books USING(Title)");
+		auto from = "(SELECT Title, Count(Title) As Count FROM (SELECT DISTINCT Const, Title FROM ratings) GROUP BY Title HAVING Count(Title) > 1)";
+		OutputQuery query(*this, "tiye.dr.ra.ty.url", from, "ti.ye.dr");
+		query.add("JOIN Ratings USING(Title)");
 		runStandardOutputQuery(query);
 	}
 
@@ -1721,9 +1723,10 @@ public:
 	{
 		constexpr auto a = actionHash;
 		switch (auto const& act = m_action; a(act.c_str())) {
-		case a("h"): case a("h0"): case a("h1"): case a("h2"): showHelp(act == "h" ? 2 : act[1] - '0'); break;
+		case a("h"): case a("h0"): case a("h1"): showHelp(act == "h" ? 1 : act[1] - '0'); break;
 		case a("l"):  listRatings(arg(0)); break;
 		case a("rr"): listRerated(); break;
+		case a("sametitle"): listSametitle(); break;
 		default:
 			throw std::invalid_argument("Invalid action: " + act);
 		}
