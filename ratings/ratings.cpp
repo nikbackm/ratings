@@ -8,12 +8,19 @@ void showHelp(int level = 0)
 		R"(Usage: RATINGS {options} <action with arguments> {options}
 
 Basic list actions:
-   h[0..1]                        Show help, level 0..1, level 1 is default.
-   l [title]                      List rated movies
+   h[0..1]        Show help, level 0..1, level 1 is default.
+   l [title]      List rated movies
 
-   rr                             List re-rated movies. Can use virtual column "rc" - rating count.
-   sametitle                      List movies with same title. Can use virtual column "tc" - title count.
-   rd [rCond=2]                   List the dates and movies where [rCond] (default 2) movies where rated.
+   rr             List re-rated movies. Can use virtual column "rc" - rating count.
+   sametitle      List movies with same title. Can use virtual column "tc" - title count.
+   rd [rCond=2]   List the dates and movies where [rCond] (default 2) movies where rated.
+   
+List rating counts. Can use virtual column rc. [rcc = rating count condition]
+   rcyr  [rcc]     - Per rating year              
+   rcr   [rcc]     - Per rating                
+   rcy   [rcc]     - Per year (release year)
+   rct   [rcc]     - Per type
+   rclen [rcc]     - Per Runtime (mins)
 
 )", stdout); if (1 <= level) fputs(
 	R"(
@@ -75,6 +82,13 @@ whereCond format: <shortName>[.<cmpOper>].<cmpArg>{.<shortName>[.<cmpOper>].<cmp
           cmpOper: and,or,nand,nor - These will consume the rest of the whereCond terms and AND/OR/NAND/NOR them using LIKE/=.
 colSizes format: Same as selColumns format
 
+rating count condition formats:
+    <number>        Only includes values with rating count >= <number>
+    lt.<number>     Only includes values with rating count < <number>
+    gt.<number>     Only includes values with rating count > <number>
+    eq.<number>     Only includes values with rating count = <number>
+    range.<n1>.<n2> Only includes Only includes values with rating count in range [n1,n2]
+
 DisplayMode values:
     col|column  Left-aligned columns (Specified or default widths are used)
     html        HTML table code
@@ -85,7 +99,6 @@ DisplayMode values:
 Column short name values:
     ti               - Title
     ye               - Year
-    tiye             - Title (Year)
     ra               - Your rating
     dr               - Date rated
     url              - IMDB url
@@ -96,6 +109,10 @@ Column short name values:
     nv               - Num votes
     rd               - Release date
     di               - Directors
+
+    tiye             - Title (Year)
+    yr               - Year rated
+    rc               - Rating count
 
     To get the length of column values "l" can be appended to the short name for non-numeric/ID columns.
     E.g. "gel" will provide the lengths of the "ge" column values.
@@ -614,6 +631,7 @@ class Ratings {
 	}
 
 #define Q(str) "\"" str "\""
+#define CAST(to, what) "CAST(" what " AS " to ")"
 
 public:
 	Ratings(int argc, char** argv)
@@ -621,7 +639,7 @@ public:
 		auto const CNoCase = "NOCASE";
 	
 		ciText("co", "Const", 10, "Key");
-		ciNum("ra", Q("Your Rating"), 5, "Rating");
+		ciNum("ra", Q("Your Rating"), 6, "Rating");
 		ciTextL("ti", "Title", 60, CNoCase, "Title");
 		ciText("dr", Q("Date Rated"), 10, "Date");
 		ciText("url", "URL", 38, "URL");
@@ -635,6 +653,8 @@ public:
 		ciTextL("di", "Directors", 50, CNoCase, "Directors");
 
 		ciTextL("tiye", "Title || ' (' || Year || ')'", 66, CNoCase, Q("Title (Year)"));
+		ciNum("yr", CAST("INTEGER","SUBSTR(\"Date Rated\",1,4)"), 6, Q("R-Year"));
+		ciAggr("rc", "COUNT(\"Your Rating\")", -8, Q("#ratings")); 
 
 		if (m_output.stdOutIsConsole()) {
 			CONSOLE_SCREEN_BUFFER_INFO csbi{}; GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi);
@@ -1693,6 +1713,21 @@ public:
 		runStandardOutputQuery(query);
 	}
 
+	void listRatingCounts(std::string const& countCond, const char* columns, const char* snGroupBy)
+	{
+		std::string cc = "rc";
+		auto selCols = columns + std::string(".") + cc;
+		if (!countCond.empty()) appendToHaving(LogOp_AND, parseCountCondition(getColumn(cc)->nameDef, countCond));
+		getColumn(snGroupBy)->usedInQuery = true;
+
+		OutputQuery query(*this, selCols.c_str(), "ratings", (cc + ".desc").c_str());
+		query.addWhere();
+		query.add("GROUP BY " + getColumn(snGroupBy)->nameDef);
+		query.addHaving();
+		query.addOrderBy();
+		runOutputQuery(query);
+	}
+
 	int executeSql(std::string const& sql, int (*cb)(void*, int, char**, char**) = nullptr, void* cbArg = nullptr, bool enableShowQuery = true) const
 	{
 		auto encSql = encodeSqlFromInput(sql);
@@ -1727,6 +1762,11 @@ public:
 		case a("l"):  listRatings(arg(0)); break;
 		case a("rr"): listRerated(); break;
 		case a("sametitle"): listSametitle(); break;
+		case a("rcyr"): listRatingCounts(arg(0), "yr", "yr"); break;
+		case a("rcr"):  listRatingCounts(arg(0), "ra", "ra"); break;
+		case a("rcy"):  listRatingCounts(arg(0), "ye", "ye"); break;
+		case a("rct"):  listRatingCounts(arg(0), "ty", "ty"); break;
+		case a("rclen"):listRatingCounts(arg(0), "len", "len"); break;
 		default:
 			throw std::invalid_argument("Invalid action: " + act);
 		}
