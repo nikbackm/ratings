@@ -2,124 +2,6 @@
 //
 #include "pch.h"
 
-void showHelp(int level = 0)
-{
-	fputs(
-		R"(Usage: RATINGS {options} <action with arguments> {options}
-
-Basic list actions:
-   h[0..1]        Show help, level 0..1, level 1 is default.
-   l [title]      List rated movies
-
-   rr             List re-rated movies. Can use virtual column "rc" - rating count.
-   sametitle      List movies with same title. Can use virtual column "tc" - title count.
-   rd [rCond=2]   List the dates and movies where [rCond] (default 2) movies where rated.
-   
-List rating counts. Can use virtual column rc. [rcc = rating count condition]
-   rcyr  [rcc]     - Per rating year              
-   rcr   [rcc]     - Per rating                
-   rcy   [rcc]     - Per year (release year)
-   rct   [rcc]     - Per type
-   rclen [rcc]     - Per Runtime (mins)
-
-)", stdout); if (1 <= level) fputs(
-	R"(
-NOTE: As wildcards in most match arguments and options "*" (any string) and "_" (any character) can be used. Wild-cards "*" 
-      around the listing actions also gives a similar effect, e.g. *b* will list all books containing the given title 
-      string, while b* will only list books starting with it instead.
-      
-Options:
-    -d[DisplayMode]   Display mode. Default is column.
-    -h[on|off]        Header row on/off. Default is on.
-    -c[selColumns]    Override the default columns of the action.
-    -a[addColumns]    Include additional columns.
-    -i[addColumns]    Include additional columns AND only list rows where they are not null.
-    -o[colOrder]      Override sort order. By default sorts by used (-c or default) columns starting from left.
-    -w[whereCond]     Add a WHERE condition - will be AND:ed with the one specified by the action and arguments.
-                      If several -w options are included their values will be OR:ed together.
-    -s[colSizes]      Override the default column sizes.
-    -q[d]             Use debug mode - dump the SQL query/command instead of executing it. 
-                      Adding 'd' also lists default columns for the action.
-    -u                Make sure the result only contain DISTINCT (UNIQUE) values.
-    -l[dbPath]        Specify ratings-sqlite database file. Uses "ratings.sqlite" by default. Either from the
-                      current directory or from "%MYDOCS%\ratings\" if MYDOCS is set.
-    -n                Print number of output rows at the end.
-    -e[encoding]      Output encoding for pipes and redirection. Default is utf8.
-    -f[on|off|auto|w] Fit column width mode. Default is auto => fit only when console is too narrow.
-                      Specifying an explicit width value implies mode "on". If no value is specified then 
-                      the width of the console is used. If there is no console then a hard-coded value is used.
-    -x[1|2|3]         Explains the query plan. x/x1 = graph EQP output, x2 = VM code output, x3 = raw EQP output.
-
-    --cons:<minRowCount>:{<colSnOrName>[:charCmpCount]|[:re|ren:<regExValue>]}+
-                     Specify column conditions for consecutive output row matching.
-                     If no explicit method is specified then matching is done by comparing against the
-                     same column value of the previous row. Can optionally specify the max number of characters
-                     to compare.
-
-    --ansi[:off][:defC:<ansiC>][:colC:<col>:<ansiC>][:valC:<colVal>:<regExValue>:col{.col}:<ansiC>}
-                     Specify ANSI colors for columns, rows and specific values. Only enabled in column display mode.
-                     * off  : Turn off ANSI coloring. Default is on when --ansi option is included.
-                     * defC : Specify default color for all values.
-                     * colC : Specify ANSI color for given column (either given as short name or full name).
-                     * valC : Specify ANSI color for the given columns when the value of the given value
-                              columns matches the included regex.
-
-    --limit:<n>      LIMIT value.
-    --offset:<n>     OFFSET value.
-
-    --colsep:<str>   The column separator used in columns display mode. Default = "  "
-    
-    For escaping option separators the escape character '!' can be used. It's also used to escape itself.
-    Note that if an option is included several times, then the last one will normally be the effective one.
-    Some options like -a and -w are additive though and all option instances of those will be used.
-
-selColumns format: <shortName>[.<width>]{.<shortName>[.<width>]}
-addColumns format: Same as selColumns format.
-colOrder format: <shortName|actualName>[.asc|desc]{.<shortName|actualName>[.asc|desc]}
-whereCond format: <shortName>[.<cmpOper>].<cmpArg>{.<shortName>[.<cmpOper>].<cmpArg>}
-          cmpOper: lt,lte,gt,gte,eq,neq,glob,nglob,isnull,notnull,isempty ("LIKE" if none is given, isnull, notnull & isempty take no cmpArg)
-          cmpOper: range,nrange - These take two cmpArgs, for start and stop of range (both inclusive)
-          cmpOper: and,or,nand,nor - These will consume the rest of the whereCond terms and AND/OR/NAND/NOR them using LIKE/=.
-colSizes format: Same as selColumns format
-
-rating count condition formats:
-    <number>        Only includes values with rating count >= <number>
-    lt.<number>     Only includes values with rating count < <number>
-    gt.<number>     Only includes values with rating count > <number>
-    eq.<number>     Only includes values with rating count = <number>
-    range.<n1>.<n2> Only includes Only includes values with rating count in range [n1,n2]
-
-DisplayMode values:
-    col|column  Left-aligned columns (Specified or default widths are used)
-    html        HTML table code
-    htmldoc     Full HTML document
-    list[:sep]  Values delimited by separator string, default is "|"
-    tabs        Tab-separated values
-
-Column short name values:
-    ti               - Title
-    ye               - Year
-    ra               - Your rating
-    dr               - Date rated
-    url              - IMDB url
-    ty               - Title type
-    ri               - IMDB rating
-    len              - Runtime (mins)
-    ge               - Genres
-    nv               - Num votes
-    rd               - Release date
-    di               - Directors
-
-    tiye             - Title (Year)
-    yr               - Year rated
-    rc               - Rating count
-
-    To get the length of column values "l" can be appended to the short name for non-numeric/ID columns.
-    E.g. "gel" will provide the lengths of the "ge" column values.
-
-)", stdout);
-}
-
 namespace Utils
 {
 #define std_string_fmt_impl(strf,resv) va_list ap;va_start(ap,strf); auto resv=fmtv(strf,ap); va_end(ap)
@@ -638,14 +520,16 @@ public:
 	{
 		auto const CNoCase = "NOCASE";
 	
-		ciText("co", "Const", 10, "Key");
+		ciText("key", "Const", 10, Q("IMDB Key"));
 		ciNum("ra", Q("Your Rating"), 6, "Rating");
-		ciTextL("ti", "Title", 60, CNoCase, "Title");
-		ciText("dr", Q("Date Rated"), 10, "Date");
-		ciText("url", "URL", 38, "URL");
+		ciTextL("ti", "Title", 60, CNoCase);
+		ciText("dr", Q("Date Rated"), 10);
+		ciText("url", "URL", 38, Q("IMDB url"));
 		ciText("ty", Q("Title Type"), 20, "Type");
 		ciNum("ri", Q("IMDB Rating"), 9, Q("IMDB Rat."));
-		ciNum("len", Q("Runtime (mins)"), 6, "Length");
+		ciNum("rtm", Q("Runtime (mins)"), 7, "Minutes");
+		ciNum("rth", "(" Q("Runtime (mins)") "+59)/60", 5, "Hours");
+		ciNum("rtq", "((" Q("Runtime (mins)") "+ 7)/15)*15", 5, "Min15");
 		ciNum("ye", "Year", 4, "Year");
 		ciTextL("ge", "Genres", 50, CNoCase, "Genres");
 		ciNum("nv", Q("Num Votes"), 9, "Votes");
@@ -653,7 +537,7 @@ public:
 		ciTextL("di", "Directors", 50, CNoCase, "Directors");
 
 		ciTextL("tiye", "Title || ' (' || Year || ')'", 66, CNoCase, Q("Title (Year)"));
-		ciNum("yr", CAST("INTEGER","SUBSTR(\"Date Rated\",1,4)"), 6, Q("R-Year"));
+		ciNum("yr", CAST("INTEGER","SUBSTR(\"Date Rated\",1,4)"), 6, Q("Year Rated"));
 		ciAggr("rc", "COUNT(\"Your Rating\")", -8, Q("#ratings")); 
 
 		if (m_output.stdOutIsConsole()) {
@@ -820,9 +704,6 @@ public:
 				}
 			}
 		}
-
-		if (m_action.empty())
-			throw std::invalid_argument("Action argument(s) missing");
 
 		if (m_dbPath.empty()) {
 			char mydocs[MAX_PATH];
@@ -1713,16 +1594,16 @@ public:
 		runStandardOutputQuery(query);
 	}
 
-	void listRatingCounts(std::string const& countCond, const char* columns, const char* snGroupBy)
+	void listRatingCounts(std::string const& listBy, std::string const& countCond)
 	{
 		std::string cc = "rc";
-		auto selCols = columns + std::string(".") + cc;
+		auto selCols = listBy + std::string(".") + cc;
 		if (!countCond.empty()) appendToHaving(LogOp_AND, parseCountCondition(getColumn(cc)->nameDef, countCond));
-		getColumn(snGroupBy)->usedInQuery = true;
+		getColumn(listBy)->usedInQuery = true;
 
 		OutputQuery query(*this, selCols.c_str(), "ratings", (cc + ".desc").c_str());
 		query.addWhere();
-		query.add("GROUP BY " + getColumn(snGroupBy)->nameDef);
+		query.add("GROUP BY " + getColumn(listBy)->nameDef);
 		query.addHaving();
 		query.addOrderBy();
 		runOutputQuery(query);
@@ -1754,19 +1635,114 @@ public:
 		return h;
 	}
 
+	void showHelp(int level = 0)
+	{
+		fputs(
+			R"(Usage: RATINGS {options} <action with arguments> {options}
+
+Actions:
+   h[0..1]        Show help, level 0..1, level 1 is default.
+   l [title]      List rated movies
+
+   rr             List re-rated movies. Can use virtual column "rc" - rating count.
+   sametitle      List movies with same title. Can use virtual column "tc" - title count.
+   rc [sn] [rcc]  List rating counts for [sn]. Can use virtual column rc. [rcc] = rating count condition.
+
+)", stdout); if (1 <= level) {
+			fputs(
+				R"(
+NOTE: As wildcards in most match arguments and options "*" (any string) and "_" (any character) can be used. Wild-cards "*" 
+      around the listing actions also gives a similar effect, e.g. *b* will list all books containing the given title 
+      string, while b* will only list books starting with it instead.
+      
+Options:
+    -d[DisplayMode]   Display mode. Default is column.
+    -h[on|off]        Header row on/off. Default is on.
+    -c[selColumns]    Override the default columns of the action.
+    -a[addColumns]    Include additional columns.
+    -i[addColumns]    Include additional columns AND only list rows where they are not null.
+    -o[colOrder]      Override sort order. By default sorts by used (-c or default) columns starting from left.
+    -w[whereCond]     Add a WHERE condition - will be AND:ed with the one specified by the action and arguments.
+                      If several -w options are included their values will be OR:ed together.
+    -s[colSizes]      Override the default column sizes.
+    -q[d]             Use debug mode - dump the SQL query/command instead of executing it. 
+                      Adding 'd' also lists default columns for the action.
+    -u                Make sure the result only contain DISTINCT (UNIQUE) values.
+    -l[dbPath]        Specify ratings-sqlite database file. Uses "ratings.sqlite" by default. Either from the
+                      current directory or from "%MYDOCS%\ratings\" if MYDOCS is set.
+    -n                Print number of output rows at the end.
+    -e[encoding]      Output encoding for pipes and redirection. Default is utf8.
+    -f[on|off|auto|w] Fit column width mode. Default is auto => fit only when console is too narrow.
+                      Specifying an explicit width value implies mode "on". If no value is specified then 
+                      the width of the console is used. If there is no console then a hard-coded value is used.
+    -x[1|2|3]         Explains the query plan. x/x1 = graph EQP output, x2 = VM code output, x3 = raw EQP output.
+
+    --cons:<minRowCount>:{<colSnOrName>[:charCmpCount]|[:re|ren:<regExValue>]}+
+                     Specify column conditions for consecutive output row matching.
+                     If no explicit method is specified then matching is done by comparing against the
+                     same column value of the previous row. Can optionally specify the max number of characters
+                     to compare.
+
+    --ansi[:off][:defC:<ansiC>][:colC:<col>:<ansiC>][:valC:<colVal>:<regExValue>:col{.col}:<ansiC>}
+                     Specify ANSI colors for columns, rows and specific values. Only enabled in column display mode.
+                     * off  : Turn off ANSI coloring. Default is on when --ansi option is included.
+                     * defC : Specify default color for all values.
+                     * colC : Specify ANSI color for given column (either given as short name or full name).
+                     * valC : Specify ANSI color for the given columns when the value of the given value
+                              columns matches the included regex.
+
+    --limit:<n>      LIMIT value.
+    --offset:<n>     OFFSET value.
+
+    --colsep:<str>   The column separator used in columns display mode. Default = "  "
+    
+    For escaping option separators the escape character '!' can be used. It's also used to escape itself.
+    Note that if an option is included several times, then the last one will normally be the effective one.
+    Some options like -a and -w are additive though and all option instances of those will be used.
+
+selColumns format: <shortName>[.<width>]{.<shortName>[.<width>]}
+addColumns format: Same as selColumns format.
+colOrder format: <shortName|actualName>[.asc|desc]{.<shortName|actualName>[.asc|desc]}
+whereCond format: <shortName>[.<cmpOper>].<cmpArg>{.<shortName>[.<cmpOper>].<cmpArg>}
+          cmpOper: lt,lte,gt,gte,eq,neq,glob,nglob,isnull,notnull,isempty ("LIKE" if none is given, isnull, notnull & isempty take no cmpArg)
+          cmpOper: range,nrange - These take two cmpArgs, for start and stop of range (both inclusive)
+          cmpOper: and,or,nand,nor - These will consume the rest of the whereCond terms and AND/OR/NAND/NOR them using LIKE/=.
+colSizes format: Same as selColumns format
+
+rating count condition formats:
+    <number>        Only includes values with rating count >= <number>
+    lt.<number>     Only includes values with rating count < <number>
+    gt.<number>     Only includes values with rating count > <number>
+    eq.<number>     Only includes values with rating count = <number>
+    range.<n1>.<n2> Only includes Only includes values with rating count in range [n1,n2]
+
+DisplayMode values:
+    col|column  Left-aligned columns (Specified or default widths are used)
+    html        HTML table code
+    htmldoc     Full HTML document
+    list[:sep]  Values delimited by separator string, default is "|"
+    tabs        Tab-separated values
+
+Column short name values:
+)", stdout);
+			for (auto const& c : m_columnInfos) if (!c.second.nameDef._Starts_with("length("))
+				printf("    %-10s - %s\n", c.first.c_str(), unquote(c.second.labelName()).c_str());
+			fputs(R"(
+    To get the length of column values "l" can be appended to the short name for non-numeric/ID columns.
+    E.g. "gel" will provide the lengths of the "ge" column values.
+)", stdout);
+		}
+	}
+
 	void executeAction()
 	{
 		constexpr auto a = actionHash;
 		switch (auto const& act = m_action; a(act.c_str())) {
-		case a("h"): case a("h0"): case a("h1"): showHelp(act == "h" ? 1 : act[1] - '0'); break;
+		case a(""): case a("h"): case a("h0"): case a("h1"): showHelp(act == "h" ? 1 : act[1] - '0'); break;
 		case a("l"):  listRatings(arg(0)); break;
 		case a("rr"): listRerated(); break;
 		case a("sametitle"): listSametitle(); break;
-		case a("rcyr"): listRatingCounts(arg(0), "yr", "yr"); break;
-		case a("rcr"):  listRatingCounts(arg(0), "ra", "ra"); break;
-		case a("rcy"):  listRatingCounts(arg(0), "ye", "ye"); break;
-		case a("rct"):  listRatingCounts(arg(0), "ty", "ty"); break;
-		case a("rclen"):listRatingCounts(arg(0), "len", "len"); break;
+		case a("rc"): listRatingCounts(arg(0), arg(1)); break;
 		default:
 			throw std::invalid_argument("Invalid action: " + act);
 		}
@@ -1775,7 +1751,7 @@ public:
 
 int main(int argc, char** argv)
 try {
-	(argc < 2) ? showHelp() : Ratings(argc, argv).executeAction();
+	Ratings(argc, argv).executeAction();
 	return 0;
 }
 catch (std::exception& ex) {
