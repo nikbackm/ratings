@@ -1645,7 +1645,7 @@ Actions:
 
    rr             List re-rated movies. Can use virtual column "rc" - rating count.
    sametitle      List movies with same title. Can use virtual column "tc" - title count.
-   rc <col> [rcc]  List rating counts for column. Can use virtual column rc. rcc = rating count condition.
+   rc <col> [rcc] List rating counts for column. Can use virtual column rc. rcc = rating count condition.
 
 )", stdout); if (1 <= level) {
 			fputs(
