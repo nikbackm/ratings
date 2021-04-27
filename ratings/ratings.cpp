@@ -530,11 +530,11 @@ public:
 		ciNum("rtm", Q("Runtime (mins)"), 7, "Minutes");
 		ciNum("rth", "(" Q("Runtime (mins)") "+59)/60", 5, "Hours");
 		ciNum("rtq", "((" Q("Runtime (mins)") "+ 7)/15)*15", 5, "Min15");
-		ciNum("ye", "Year", 4, "Year");
-		ciTextL("ge", "Genres", 50, CNoCase, "Genres");
+		ciNum("ye", "Year", 4);
+		ciTextL("ge", "Genres", 50, CNoCase);
 		ciNum("nv", Q("Num Votes"), 9, "Votes");
 		ciText("rd", Q("Release Date"), 10, "Released");
-		ciTextL("di", "Directors", 50, CNoCase, "Directors");
+		ciTextL("di", "Directors", 50, CNoCase);
 
 		ciTextL("tiye", "Title || ' (' || Year || ')'", 66, CNoCase, Q("Title (Year)"));
 		ciNum("yr", CAST("INTEGER","SUBSTR(\"Date Rated\",1,4)"), 6, Q("Year Rated"));
