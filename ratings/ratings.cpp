@@ -114,7 +114,6 @@ using namespace Utils;
 namespace RatingsDefs
 {
 	using IdValue = unsigned long long;
-	using GenreIds = std::vector<IdValue>;
 
 	enum class DisplayMode {
 		column,
@@ -1646,7 +1645,7 @@ Actions:
 
    rr             List re-rated movies. Can use virtual column "rc" - rating count.
    sametitle      List movies with same title. Can use virtual column "tc" - title count.
-   rc [sn] [rcc]  List rating counts for [sn]. Can use virtual column rc. [rcc] = rating count condition.
+   rc <col> [rcc]  List rating counts for column. Can use virtual column rc. rcc = rating count condition.
 
 )", stdout); if (1 <= level) {
 			fputs(
@@ -1752,7 +1751,6 @@ Column short name values:
 int main(int argc, char** argv)
 try {
 	Ratings(argc, argv).executeAction();
-	return 0;
 }
 catch (std::exception& ex) {
 	fprintf(stderr, "%s\n", ex.what());
