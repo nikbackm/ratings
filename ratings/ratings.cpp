@@ -1641,10 +1641,10 @@ public:
 
 Actions:
    h[0..1]        Show help, level 0..1, level 1 is default.
-   l [title]      List rated movies
+   r [title]      List rated movies
 
-   rr             List re-rated movies. Can use virtual column "rc" - rating count.
-   sametitle      List movies with same title. Can use virtual column "tc" - title count.
+   re             List re-rated movies. Can use virtual column "rc" - rating count.
+   st             List movies with same title. Can use virtual column "tc" - title count.
    rc <col> [rcc] List rating counts for column. Can use virtual column rc. rcc = rating count condition.
 
 )", stdout); if (1 <= level) {
@@ -1738,9 +1738,9 @@ Column short name values:
 		constexpr auto a = actionHash;
 		switch (auto const& act = m_action; a(act.c_str())) {
 		case a(""): case a("h"): case a("h0"): case a("h1"): showHelp(act == "h" ? 1 : act[1] - '0'); break;
-		case a("l"):  listRatings(arg(0)); break;
-		case a("rr"): listRerated(); break;
-		case a("sametitle"): listSametitle(); break;
+		case a("r"):  listRatings(arg(0)); break;
+		case a("re"): listRerated(); break;
+		case a("st"): listSametitle(); break;
 		case a("rc"): listRatingCounts(arg(0), arg(1)); break;
 		default:
 			throw std::invalid_argument("Invalid action: " + act);
