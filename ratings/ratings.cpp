@@ -139,7 +139,7 @@ namespace RatingsDefs
 		automatic,
 	};
 
-	const char* DefDbName = "ratings.sqlite";
+	const char* DefDbName = "ratingsExtended.sqlite";
 	const char    OptDelim = '.';
 	const char    OptExtDelim = ':';
 	const char    Wc = '*';
