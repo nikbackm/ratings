@@ -165,6 +165,53 @@ namespace RatingsDefs
 		return escSqlVal(str, tryToTreatAsNumeric);
 	}
 
+	struct TableInfo {
+		TableInfo* parent = nullptr; // Parent table, i.e. table that will need to be included in the current query if this table is. May be null.
+		bool used = false;           // Is the table used in the (output) query?
+		bool included = false;       // Is the table already included in the query?
+
+		void reset() { *this = TableInfo{}; }
+	};
+
+	struct Tables {
+		constexpr static int MaxSize = 2;
+		TableInfo* tis[MaxSize];
+
+		Tables(TableInfo* ti1 = nullptr, TableInfo* ti2 = nullptr)
+			: tis{ti1, ti2} {}
+
+		void reset(TableInfo* ti1 = nullptr, TableInfo* ti2 = nullptr)
+		{
+			*this = Tables(ti1, ti2);
+		}
+
+		TableInfo** begin() { return tis;}
+
+		TableInfo** end() 
+		{ 
+			int i = 0; while (i < MaxSize && tis[i] != nullptr) ++i;
+			return tis + i;
+		}
+	};
+
+	struct TableInfos {
+		TableInfos() {};
+
+		union {
+			TableInfo arrView[5] = {};
+			#pragma warning(disable : 4201) // nameless struct extension.
+			struct {
+				// Start tables
+				TableInfo ratings;
+				TableInfo title_basics;
+				TableInfo title_akas;
+				TableInfo title_principals; // Also a link table to name_basics
+				TableInfo name_basics;
+			};
+		};
+	};
+	static_assert(sizeof(TableInfos::arrView) == sizeof(TableInfos), "check arrView size!");
+
 	enum Justify : int { JLeft = 1, JCenter = 0, JRight = -1 }; // For DisplayMode::column
 
 	struct ColumnInfo {
@@ -176,14 +223,15 @@ namespace RatingsDefs
 		bool        const aggr; // Is a group aggregate column?
 
 		ColumnInfo const* lengthColumn = nullptr; // Will be set only if the column has a length column added.
-		const char* collation = nullptr; // Only set if not using the default (usually BINARY)
+		const char*       collation = nullptr; // Only set if not using the default (usually BINARY)
+		mutable Tables    tables; // Tables needed by nameDef in the query, varies with startTable(action).
 
 		mutable int  sWidth = -1; // Width set by the -s option.
 		mutable bool usedInQuery = false; // Tells if column is references anywhere in the query.
 		mutable bool usedInResult = false; // Tells if column is a result (i.e. SELECT:ed) column.
 
-		ColumnInfo(std::string const& nameDef, int width, Justify j, ColumnType ct, std::string const& label, bool aggr) :
-			nameDef(nameDef), width(width), justify(j), type(ct), label(label), aggr(aggr) {}
+		ColumnInfo(std::string const& nameDef, int width, Justify j, ColumnType ct, std::string const& label, bool aggr, Tables t) :
+			nameDef(nameDef), width(width), justify(j), type(ct), label(label), aggr(aggr), tables(t) {}
 
 		std::string const& labelName() const { return label.empty() ? nameDef : label; }
 
@@ -450,6 +498,7 @@ struct SqliteCloser { void operator()(sqlite3* p) const { sqlite3_close(p); } };
 enum class ExQ { None = 0, Graph = 1, VMCode = 2, Raw = 3 };
 
 class Ratings {
+	TableInfos m_tableInfos;
 	std::map<std::string, ColumnInfo> m_columnInfos; // short name => ColumnInfo. NO operator names! E.g. asc,desc,lt,eq.
 	mutable decltype(m_columnInfos) m_ancis; // Holds ColumnInfo:s for dynamically added "actual name" columns.
 	std::unique_ptr<sqlite3, SqliteCloser> m_conn;
@@ -480,35 +529,35 @@ class Ratings {
 	std::vector<std::string> m_args;
 	int m_rowCount = 0; // The number of rows printed so far.
 
-	ColumnInfo& ci(std::string const& sn, std::string const& nameDef, int width, ColumnType ct, std::string const& label, bool aggr = false)
+	ColumnInfo& ci(std::string const& sn, std::string const& nameDef, int width, ColumnType ct, Tables t, std::string const& label, bool aggr = false)
 	{
-		if (auto res = m_columnInfos.try_emplace(sn, nameDef, abs(width), width > 0 ? JLeft : JRight, ct, label, aggr); res.second)
+		if (auto res = m_columnInfos.try_emplace(sn, nameDef, abs(width), width > 0 ? JLeft : JRight, ct, label, aggr, t); res.second)
 			return res.first->second;
 		throw std::logic_error("Duplicate short name: " + sn);
 	}
 
-	ColumnInfo& ciText(std::string const& sn, std::string const& nameDef, int width, std::string const& label = "")
+	ColumnInfo& ciText(std::string const& sn, std::string const& nameDef, int width, Tables tables, std::string const& label = "")
 	{
-		return ci(sn, nameDef, width, ColumnType::text, label);
+		return ci(sn, nameDef, width, ColumnType::text, tables, label);
 	}
 
-	ColumnInfo& ciNum(std::string const& sn, std::string const& nameDef, int width, std::string const& label = "")
+	ColumnInfo& ciNum(std::string const& sn, std::string const& nameDef, int width, Tables tables, std::string const& label = "")
 	{
-		return ci(sn, nameDef, width, ColumnType::numeric, label);
+		return ci(sn, nameDef, width, ColumnType::numeric, tables, label);
 	}
 
-	ColumnInfo& ciTextL(std::string const& sn, std::string const& nameDef, int width, const char* collation, std::string const& label = "")
+	ColumnInfo& ciTextL(std::string const& sn, std::string const& nameDef, int width, Tables tables, const char* collation, std::string const& label = "")
 	{
-		auto& ci = ciText(sn, nameDef, width, label);
+		auto& ci = ciText(sn, nameDef, width, tables, label);
 		auto const labelLength = "l_" + sn;
-		ci.lengthColumn = &ciNum(sn + "l", "length(" + nameDef + ")", labelLength.length(), labelLength);
+		ci.lengthColumn = &ciNum(sn + "l", "length(" + nameDef + ")", labelLength.length(), tables, labelLength);
 		ci.collation = collation;
 		return ci;
 	}
 
-	ColumnInfo& ciAggr(std::string const& sn, std::string const& def, int width, std::string const& label)
+	ColumnInfo& ciAggr(std::string const& sn, std::string const& def, int width, Tables tables, std::string const& label)
 	{
-		return ci(sn, def, width, ColumnType::numeric, label, true);
+		return ci(sn, def, width, ColumnType::numeric, tables, label, true);
 	}
 
 #define Q(str) "\"" str "\""
@@ -518,26 +567,51 @@ public:
 	Ratings(int argc, char** argv)
 	{
 		auto const CNoCase = "NOCASE";
+		auto& t = m_tableInfos;
 	
-		ciText("key", "Const", 10, Q("IMDB Key"));
-		ciNum("ra", Q("Your Rating"), 6, "Rating");
-		ciTextL("ti", "Title", 60, CNoCase);
-		ciText("dr", Q("Date Rated"), 10);
-		ciText("url", "URL", 38, Q("IMDB url"));
-		ciText("ty", Q("Title Type"), 20, "Type");
-		ciNum("ri", Q("IMDB Rating"), 9, Q("IMDB Rat."));
-		ciNum("rtm", Q("Runtime (mins)"), 7, "Minutes");
-		ciNum("rth", "(" Q("Runtime (mins)") "+59)/60", 5, "Hours");
-		ciNum("rtq", "((" Q("Runtime (mins)") "+ 7)/15)*15", 5, "Min15");
-		ciNum("ye", "Year", 4);
-		ciTextL("ge", "Genres", 50, CNoCase);
-		ciNum("nv", Q("Num Votes"), 9, "Votes");
-		ciText("rd", Q("Release Date"), 10, "Released");
-		ciTextL("di", "Directors", 50, CNoCase);
+		ciText("tc", "tconst", 10, Tables(), Q("Title key"));
+		ciNum("ra", Q("Your Rating"), 6, Tables(&t.ratings), "Rating");
+		ciTextL("ti", "ratings.Title", 60, Tables(&t.ratings), CNoCase);
+		ciText("dr", Q("Date Rated"), 10, Tables(&t.ratings));
+		ciText("url", "URL", 38, Tables(&t.ratings), Q("IMDB url"));
+		ciText("ty", Q("Title Type"), 20, Tables(&t.ratings), "Type");
+		ciNum("ri", Q("IMDB Rating"), 9, Tables(&t.ratings), Q("IMDB Rat."));
+		ciNum("rtm", Q("Runtime (mins)"), 7, Tables(&t.ratings), "Minutes");
+		ciNum("rth", "(" Q("Runtime (mins)") "+59)/60", 5, Tables(&t.ratings), "Hours");
+		ciNum("rtq", "((" Q("Runtime (mins)") "+ 7)/15)*15", 5, Tables(&t.ratings), "Min15");
+		ciNum("ye", "Year", 4, Tables(&t.ratings));
+		ciTextL("ge", "Genres", 50, Tables(&t.ratings), CNoCase);
+		ciNum("nv", Q("Num Votes"), 9, Tables(&t.ratings), "Votes");
+		ciText("rd", Q("Release Date"), 10, Tables(&t.ratings), "Released");
+		ciTextL("di", "Directors", 50, Tables(&t.ratings), CNoCase);
+		ciTextL("tiye", "Title || ' (' || Year || ')'", 66, Tables(&t.ratings), CNoCase, Q("Title (Year)"));
+		ciNum("yr", CAST("INTEGER","SUBSTR(\"Date Rated\",1,4)"), 6, Tables(&t.ratings), Q("Year Rated"));
+		ciAggr("rc", "COUNT(\"Your Rating\")", -8, Tables(&t.ratings), Q("#ratings"));
+		
+		ciText("nc", "nconst", 10, Tables(), Q("Name key"));
+		ciText("pn", "primaryName", 30, Tables(&t.name_basics), Q("Primary Name"));
+		ciNum("by", "birthYear", 4, Tables(&t.name_basics), Q("Birth Year"));
+		ciNum("dy", "deathYear", 4, Tables(&t.name_basics), Q("Death Year"));
+		ciText("pp", "primaryProfession", 30, Tables(&t.name_basics), Q("Primary Profession"));
+		ciText("kt", "knownForTitles", 30, Tables(&t.name_basics), Q("Known For Titles"));
 
-		ciTextL("tiye", "Title || ' (' || Year || ')'", 66, CNoCase, Q("Title (Year)"));
-		ciNum("yr", CAST("INTEGER","SUBSTR(\"Date Rated\",1,4)"), 6, Q("Year Rated"));
-		ciAggr("rc", "COUNT(\"Your Rating\")", -8, Q("#ratings")); 
+		ciNum("tpo", "ordering", 2, Tables(&t.title_principals), "Ordering");
+		ciText("cat", "category", 20, Tables(&t.title_principals), "Category");
+		ciText("job", "job", 20, Tables(&t.title_principals), "Job");
+		ciText("ch", "characters", 30, Tables(&t.title_principals), "Characters");
+
+		ciText("pt", "primaryTitle", 30, Tables(&t.title_basics), Q("Primary Title"));
+		ciText("ot", "originalTitle", 30, Tables(&t.title_basics), Q("Original Title"));
+		ciNum("isad", "isAdult", 3, Tables(&t.title_basics), Q("Is Adult"));
+		ciNum("sy", "startYear", 4, Tables(&t.title_basics), Q("Start Year"));
+		ciNum("ey", "endYear", 4, Tables(&t.title_basics), "End Year");
+
+		ciText("tia", "title_akas.title", 30, Tables(&t.title_akas), "Title");
+		ciText("rg", "region", 4, Tables(&t.title_akas), "Region");
+		ciText("la", "language", 4, Tables(&t.title_akas), "Language");
+		ciText("tya", "types", 20, Tables(&t.title_akas), "Types");
+		ciText("at", "attributes", 20, Tables(&t.title_akas), "Attributes");
+		ciNum("isot", "isOriginalTitle", 3, Tables(&t.title_akas), Q("Is Original Title"));
 
 		if (m_output.stdOutIsConsole()) {
 			CONSOLE_SCREEN_BUFFER_INFO csbi{}; GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi);
@@ -720,7 +794,7 @@ public:
 	ColumnInfo const* getColumn(std::string const& sn, bool allowActualName = false) const
 	{
 		if (auto it = m_columnInfos.find(sn); it != m_columnInfos.end()) return &it->second;
-		if (allowActualName) return &m_ancis.try_emplace(sn, sn, (int)sn.length(), JLeft, ColumnType::numeric, sn, false).first->second;
+		if (allowActualName) return &m_ancis.try_emplace(sn, sn, (int)sn.length(), JLeft, ColumnType::numeric, sn, false, Tables()).first->second;
 		throw std::invalid_argument("Invalid short column name: " + sn);
 	}
 
@@ -875,14 +949,15 @@ public:
 	// Needed when listing output multiple times in same LITT session (like when listing items for book input!)
 	// Note that usedInResult is used/checked and reset in addOrderBy. Cannot do that here since addAuxTables
 	// is called multiple times to generate a single query in some cases.
-	void resetColumns()
+	void resetTablesAndColumns()
 	{
+		for (auto& ti : m_tableInfos.arrView) ti.reset();
 		for (auto& node : m_columnInfos) node.second.usedInQuery = false;
 	}
 
 	void resetListingData(std::string const& whereCondition) // For use from listings during add actions.
 	{
-		resetColumns();
+		resetTablesAndColumns();
 		m_selectedColumns.clear(); m_orderBy.clear(); m_additionalColumns.clear();
 		m_whereBase = getWhereCondition(whereCondition); m_whereAdditional.clear();
 	}
@@ -919,6 +994,37 @@ public:
 	std::string toUtf8(std::string const& str) const { return Utils::toUtf8(consoleCodePage, str); }
 	std::string fromUtf8(std::string const& str) const { return Utils::fromUtf8(consoleCodePage, str); }
 	std::string encodeSqlFromInput(std::string const& sql) const { return toUtf8(sql); }
+
+	enum class Table { // The main tables, used to select listing source.
+		ratings,
+		title_basics,
+		title_akas,
+		title_principals,
+		name_basics,
+	};
+
+	struct TableData {
+		const char* tableName;
+		TableInfo& tableInfo;
+	};
+
+	TableData m_tableData[5] = { // Same order as Table!
+		{ "ratings", m_tableInfos.ratings },
+		{ "title_basics", m_tableInfos.title_basics },
+		{ "title_akas", m_tableInfos.title_akas },
+		{ "title_principals", m_tableInfos.title_principals },
+		{ "name_basics", m_tableInfos.name_basics},
+	};
+
+	const char* getTableName(Table table) const
+	{
+		return m_tableData[(int)table].tableName;
+	}
+
+	TableInfo& getTableInfo(Table table)
+	{
+		return m_tableData[(int)table].tableInfo;
+	}
 
 	enum class SelectOption { normal, distinct };
 
@@ -1046,9 +1152,105 @@ public:
 			xad(res);
 		}
 
-		void addAuxTablesRaw(unsigned indentSize = 0)
+		// NOTE: We assume the tableInfos are reset whenever startTable is changed to something else than the last call.
+		void initTablesAndColumns(Table const startTable)
 		{
+			// First determine tables relationships according to start table and which table link/id fields are taken from
+			//
+			auto& t = ratings.m_tableInfos;
+			auto& tc = ratings.getColumn("tc")->tables;
+			auto& nc = ratings.getColumn("nc")->tables;
+
+			t.name_basics.parent = &t.title_principals;
+
+			switch (startTable) {
+			case Table::ratings:
+			case Table::title_basics:
+			case Table::title_akas:
+				tc.reset(); // Included in startTable, no need to table to find it from.
+				nc.reset(&t.title_principals);
+				break;
+			case Table::title_principals:
+				tc.reset(); // Included in startTable...
+				nc.reset(); // Included in startTable...
+				break;
+			case Table::name_basics:
+				tc.reset(&t.title_principals);
+				nc.reset(); // Included in startTable...
+				t.name_basics.parent = nullptr;
+				t.ratings.parent = t.title_basics.parent = t.title_akas.parent = &t.title_principals;
+				break;
+			default:
+				throw std::logic_error("initTablesAndColumns: Invalid startUpTable");
+			}
+
+			// Then apply used columns to the tables.
+			//
+			for (auto& node : ratings.m_columnInfos) {
+				ColumnInfo& ci = node.second;
+				if (ci.usedInQuery) {
+					for (TableInfo* ti : ci.tables) {
+						for (TableInfo* cur = ti; cur != nullptr; cur = cur->parent) {
+							cur->used = true;
+						}
+					}
+				}
+			}
+		}
+
+		void addAuxTablesRaw(Table startTable = Table::ratings, unsigned indentSize = 0)
+		{
+			ratings.getTableInfo(startTable).included = true; // Do this here so it's done also if addAuxTablesMultipleCalls is called.
 			std::string const indent(indentSize, ' ');
+
+			auto includeImpl = [&](TableInfo& table, const char* join, const char* sql) {
+				if (table.used && !table.included) {
+					add(indent); a(join); a(" "); a(sql);
+					table.included = true;
+				}
+			};
+			auto include = [&](TableInfo& table, const char* sql) {
+				includeImpl(table, "JOIN", sql);
+			};
+			auto includeLeft = [&](TableInfo& table, const char* sql) {
+				includeImpl(table, "LEFT JOIN", sql);
+			};
+			auto includeLeftIf = [&](TableInfo& table, const char* sql, Table leftJoinUnlessThis) {
+				includeImpl(table, startTable == leftJoinUnlessThis ? "JOIN" : "LEFT JOIN", sql);
+			};
+
+			auto& t = ratings.m_tableInfos;
+
+			switch (startTable) {
+			case Table::ratings:
+			case Table::title_basics:
+			case Table::title_akas:
+				include(t.title_principals, "title_principals USING(tconst)");
+				break;
+			case Table::title_principals:
+				break;
+			case Table::name_basics:
+				include(t.title_principals, "title_principals USING(nconst)");
+				break;
+			}
+
+			include(t.ratings, "ratings USING(tconst)");
+			include(t.title_basics, "title_basics USING(tconst)");
+			include(t.title_akas, "title_akas USING(tconst)");
+			include(t.name_basics, "name_basics USING(nconst)");
+		}
+
+		void addAuxTables(Table startTable = Table::ratings, unsigned indentSize = 0)
+		{
+			initTablesAndColumns(startTable);
+			addAuxTablesRaw(startTable, indentSize);
+			ratings.resetTablesAndColumns();
+		}
+
+		void addAuxTablesMultipleCalls(Table startTable = Table::ratings, unsigned indentSize = 0)
+		{
+			addAuxTablesRaw(startTable, indentSize);
+			for (auto& ti : ratings.m_tableInfos.arrView) ti.included = false;
 		}
 
 		void addOrderBy()
@@ -1558,16 +1760,17 @@ public:
 		}
 	}
 
-	void runStandardOutputQuery(OutputQuery& query)
+	void runStandardOutputQuery(OutputQuery& query, Table startTable = Table::ratings)
 	{
+		query.addAuxTables(startTable);
 		query.addWhere();
 		query.addOrderBy();
 		runOutputQuery(query);
 	}
 
-	void runListData(const char* defColumns, const char* defOrderBy, SelectOption selOpt = SelectOption::normal)
+	void runListData(const char* defColumns, const char* defOrderBy, Table startTable = Table::ratings, SelectOption selOpt = SelectOption::normal)
 	{
-		OutputQuery query(*this, defColumns, "ratings", defOrderBy, selOpt);
+		OutputQuery query(*this, defColumns, getTableName(startTable), defOrderBy, selOpt);
 		runStandardOutputQuery(query);
 	}
 
@@ -1579,15 +1782,15 @@ public:
 
 	void listRerated()
 	{
-		auto from = "(SELECT Const, Count(Const) As Count FROM ratings GROUP BY Const HAVING Count(Const) > 1)";
+		auto from = "(SELECT tconst, Count(tconst) As Count FROM ratings GROUP BY tconst HAVING Count(tconst) > 1)";
 		OutputQuery query(*this, "ti.dr.ra.ty.ye.url", from, "ti.dr");
-		query.add("JOIN Ratings USING(Const)");
+		query.add("JOIN Ratings USING(tconst)");
 		runStandardOutputQuery(query);
 	}
 
 	void listSametitle()
 	{
-		auto from = "(SELECT Title, Count(Title) As Count FROM (SELECT DISTINCT Const, Title FROM ratings) GROUP BY Title HAVING Count(Title) > 1)";
+		auto from = "(SELECT Title, Count(Title) As Count FROM (SELECT DISTINCT tconst, Title FROM ratings) GROUP BY Title HAVING Count(Title) > 1)";
 		OutputQuery query(*this, "tiye.dr.ra.ty.url", from, "ti.ye.dr");
 		query.add("JOIN Ratings USING(Title)");
 		runStandardOutputQuery(query);

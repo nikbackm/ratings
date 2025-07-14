@@ -2,3 +2,4 @@ RATINGS Changelog:
 =================
  * 2021-04-21: Copied structure and base code from LITT.
  * 2021-04-23: Working prototype.
+ * 2025-07-14  Included more IMDB tables.
